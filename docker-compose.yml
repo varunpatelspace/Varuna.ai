@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: varuna-backend
+    restart: always
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - DATABASE_URL=postgresql://varuna_admin:VarunaSecurePostgresPass2026!@postgres:5432/varuna_prod
+      - SECRET_KEY=varuna-production-jwt-secret-key-replace-in-cloud-vault-64chars!
+      - REDIS_URL=redis://redis:6379/0
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:-rzp_test_mock_key_id}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:-rzp_test_mock_secret_key}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:-rzp_webhook_secret_key_prod}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ALLOWED_ORIGINS=http://localhost:3000,https://varuna.ai
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - uploads_data:/app/storage/uploads
+    networks:
+      - varuna-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: varuna-frontend
+    restart: always
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - varuna-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: varuna-postgres
+    restart: always
+    environment:
+      - POSTGRES_DB=varuna_prod
+      - POSTGRES_USER=varuna_admin
+      - POSTGRES_PASSWORD=VarunaSecurePostgresPass2026!
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U varuna_admin -d varuna_prod"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - varuna-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: varuna-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - varuna-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:
+
+networks:
+  varuna-network:
+    driver: bridge
